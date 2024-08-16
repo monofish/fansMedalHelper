@@ -268,20 +268,91 @@ class BiliUser:
             self.log.log("INFO", "每日观看直播任务关闭")
             return
         HEART_MAX = self.config['WATCHINGLIVE']
+        check_progress = self.config['WATCHING_PROGRESS_MONINTOR']
         self.log.log("INFO", f"每日{HEART_MAX}分钟任务开始")
         n = 0
         for medal in self.medalsNeedDo:
             n += 1
-            for heartNum in range(1, HEART_MAX+1):
+            heartbeat_total = 0
+
+            def medal_anchor_msg():
+                return f"({n}/{len(self.medalsNeedDo)})[{medal['medal']['target_id']}]{medal['anchor_info']['nick_name']}"
+
+            async def check_watching_progress():
+                medalInfo = await self.api.getMedalsInfoByUid(medal['medal']['target_id'])
+                if medalInfo['user_task']['module_title'] == '升级任务':
+                    try:
+                        progress = next((task for task in medalInfo['user_task']['task_list']
+                                         if task['task_id'] == 106  # 粉丝团升级任务：观看25分钟+1500亲密度
+                                         ))
+                        progress.update(
+                            {'msg': f"{progress['title']}升级任务当前进度：{progress['cur_progress']:+d}/{progress['desc']}"})
+                        return progress
+                    except StopIteration:
+                        return {'done': False, 'msg': "获取升级任务进度失败"}
+                else:
+                    return {'done': False, 'msg': "粉丝牌未点亮，无法获取升级任务进度"}
+
+            cur_progress = {}
+
+            if check_progress:
+                cur_progress = await check_watching_progress()
+                if not cur_progress['done']:
+                    if cur_progress.get('cur_progress') is not None:
+                        self.log.success(
+                            f"{medal_anchor_msg()} {cur_progress['title']}升级任务开始，当前进度：{cur_progress['cur_progress']:+d}/{cur_progress['desc']}")
+                    else:
+                        self.log.warning(f"{medal_anchor_msg()} {cur_progress['msg']}")
+            else:
+                self.log.warning("升级任务进度监控未开启")
+
+            for heartNum in range(HEART_MAX + 1):
+                if cur_progress.get('done', False):
+                    break
+
+                HEARTBEAT_INTERVAL = 59
+
+                async def check_watching_progress_loop():
+                    await asyncio.sleep(2)
+                    nonlocal cur_progress
+                    last_progress = cur_progress
+                    progress = await check_watching_progress()
+                    cur_progress = progress
+                    if cur_progress.get('done'):
+                        return cur_progress
+                    elif cur_progress.get('cur_progress') is None and cur_progress['msg'] != last_progress['msg']:
+                        self.log.warning(f"{medal_anchor_msg()} {cur_progress['msg']}")
+                    else:
+                        is_progress_changed = cur_progress.get('cur_progress') != last_progress.get('cur_progress')
+                        self.log.log(
+                            'SUCCESS' if is_progress_changed else 'DEBUG',
+                            f"{medal_anchor_msg()} {cur_progress['msg']}, 已发送 {heartNum + 1} 次心跳包")
+                        if is_progress_changed:
+                            return cur_progress
+
+                async def send_heartbeat():
+                    await self.api.heartbeat(medal['room_info']['room_id'], medal['medal']['target_id'])
+                    self.log.log('INFO' if heartNum % 5 == 0 or heartNum == HEART_MAX else 'DEBUG',
+                                 f"{medal_anchor_msg()} 第 {heartNum + 1} 次心跳包已发送")
+
                 tasks = []
-                tasks.append(self.api.heartbeat(medal['room_info']['room_id'], medal['medal']['target_id']))
-                await asyncio.gather(*tasks)
-                if heartNum%5==0:
-                    self.log.log(
-                        "INFO",
-                        f"{medal['anchor_info']['nick_name']} 第{heartNum}次心跳包已发送（{n}/{len(self.medalsNeedDo)}）",
-                    )
-                await asyncio.sleep(60)
+                if heartNum < HEART_MAX:
+                    tasks.append(asyncio.sleep(HEARTBEAT_INTERVAL))
+                tasks.append(send_heartbeat())
+                if check_progress:
+                    tasks.append(check_watching_progress_loop())
+
+                for future in asyncio.as_completed(tasks):
+                    res = await future
+                    if isinstance(res, dict) and res.get('done'):
+                        cur_progress = res
+                        break
+
+                heartbeat_total = heartNum + 1
+
+            progress_msg = f"{cur_progress['title']}升级任务已完成（{cur_progress['desc']}），" if cur_progress.get('done') else ''
+            self.log.success(f"{medal_anchor_msg()} {progress_msg}共发送 {heartbeat_total} 次心跳包")
+
         self.log.log("SUCCESS", f"每日{HEART_MAX}分钟任务完成")
 
     async def signInGroups(self):

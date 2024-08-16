@@ -30,6 +30,7 @@ try:
     # assert users['SHARE_CD'] >= 0, "SHARE_CD参数错误"
     assert users["DANMAKU_CD"] >= 0, "DANMAKU_CD参数错误"
     assert users["WATCHINGLIVE"] >= 0, "WATCHINGLIVE参数错误"
+    assert users.get("WATCHING_PROGRESS_MONINTOR") is None or users["WATCHING_PROGRESS_MONINTOR"] in [0, 1], "WATCHING_PROGRESS_MONINTOR参数错误"
     assert users["WEARMEDAL"] in [0, 1], "WEARMEDAL参数错误"
     config = {
         "ASYNC": users["ASYNC"],
@@ -37,6 +38,7 @@ try:
         # "SHARE_CD": users['SHARE_CD'],
         "DANMAKU_CD": users["DANMAKU_CD"],
         "WATCHINGLIVE": users["WATCHINGLIVE"],
+        "WATCHING_PROGRESS_MONINTOR": bool(users.get("WATCHING_PROGRESS_MONINTOR", 0)),
         "WEARMEDAL": users["WEARMEDAL"],
         "SIGNINGROUP": users.get("SIGNINGROUP", 2),
         "PROXY": users.get("PROXY"),
