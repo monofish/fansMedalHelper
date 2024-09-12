@@ -268,7 +268,7 @@ class BiliUser:
             self.log.log("INFO", "每日观看直播任务关闭")
             return
         HEART_MAX = self.config['WATCHINGLIVE']
-        check_progress = self.config['WATCHING_PROGRESS_MONINTOR']
+        check_progress = self.config['WATCHING_PROGRESS_MONITOR']
         self.log.log("INFO", f"每日{HEART_MAX}分钟任务开始")
         n = 0
         for medal in self.medalsNeedDo:
